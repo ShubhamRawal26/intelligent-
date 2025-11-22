@@ -1,0 +1,2093 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IntelliStudy AI</title>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+      // On page load or when changing themes, best to add inline in `head` to avoid FOUC
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#6366f1', // indigo-500
+              'secondary': '#14b8a6', // teal-500
+              'background': '#f1f5f9', // slate-100
+              'sidebar': '#1e293b', // slate-800
+              'sidebar-accent': '#334155', // slate-700
+              'text-primary': '#0f172a', // slate-900
+              'text-secondary': '#475569', // slate-600
+            },
+          },
+        },
+      }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "@google/genai": "https://esm.sh/@google/genai"
+      }
+    }
+    </script>
+  </head>
+  <body class="bg-background dark:bg-slate-900">
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      import React, { useState, useEffect, useCallback, useRef } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { GoogleGenAI, Type, Modality } from "@google/genai";
+
+      // --- TYPES ---
+      const Sender = {
+        User: 'user',
+        AI: 'ai',
+        System: 'system',
+      };
+
+      // --- ICONS ---
+      const AdminIcon = ({ className = 'w-6 h-6' }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.286zm0 13.036h.008v.008h-.008v-.008z" />
+          </svg>
+      );
+      const ArrowLeftIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+      );
+      const CameraIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      );
+      const ChatIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      );
+      const CheckIcon = ({ className = 'w-6 h-6' }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+      );
+      const DiagramIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      );
+      const FlaskIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 2v11a5 5 0 005 5h0a5 5 0 005-5V2" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 2h14" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 13h10" />
+        </svg>
+      );
+      const HomeIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      );
+      const MoonIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+      );
+      const NotesIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+      const NotificationBellIcon = ({ className = 'w-6 h-6' }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+      );
+      const NotificationIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+      );
+      const PricingIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01M12 6v-1h4a2 2 0 00-2-2H8a2 2 0 00-2 2h4v1M12 18V9" />
+        </svg>
+      );
+      const ProfileIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      );
+      const QuestionIcon = ({ className = 'w-6 h-6' }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+      );
+      const SalesIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+      );
+      const SearchIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      );
+      const SendIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+          <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+        </svg>
+      );
+      const SparklesIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+      );
+      const SunIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      );
+      const UploadIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+      );
+      const UsersIcon = ({ className = 'w-6 h-6' }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-3-5.197M15 21a9 9 0 00-3-6.572M15 21a9 9 0 006-6.572M9 3a9 9 0 000 13.142" />
+        </svg>
+      );
+      const XIcon = ({ className = 'w-6 h-6' }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+      );
+
+      // --- UTILITY COMPONENTS ---
+      const LoadingSpinner = ({ size = '8', color = 'primary' }) => {
+        return (
+          <svg className={`animate-spin h-${size} w-${size} text-${color}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        );
+      };
+
+      // --- GEMINI SERVICE ---
+      const API_KEY = process.env.API_KEY;
+      
+      const ai = new GoogleGenAI({ apiKey: API_KEY });
+      
+      const generateConceptAnswer = async (history, question, isExplainLikeFive) => {
+        try {
+          const model = 'gemini-2.5-pro';
+          const systemInstruction = isExplainLikeFive 
+            ? "You are a friendly teacher. Explain the following concept to a 10-year-old, using simple words and fun analogies. Keep it concise."
+            : "You are an expert academic assistant. Provide a clear, accurate, and detailed answer to the user's question. Format your response using markdown for readability, including code blocks for formulas or code.";
+          
+          const response = await ai.models.generateContent({
+            model,
+            contents: [...history, { role: 'user', parts: [{ text: question }] }],
+            config: {
+              systemInstruction,
+            }
+          });
+          
+          return response.text;
+        } catch (error) {
+          console.error("Error generating answer:", error);
+          return "Sorry, I encountered an error while processing your request. Please try again.";
+        }
+      };
+
+      const generateDoubtAnswer = async (history, question, isExplainLikeFive) => {
+        try {
+          const model = 'gemini-2.5-pro';
+          const systemInstruction = isExplainLikeFive 
+            ? "You are a helpful study assistant. Explain the following concept to a 5-year-old child, using simple words and analogies. Be concise and friendly."
+            : "You are an expert academic assistant. Provide a clear, accurate, and detailed answer to the user's question. Format your response using markdown for readability.";
+          
+          const response = await ai.models.generateContent({
+            model,
+            contents: [...history, { role: 'user', parts: [{ text: question }] }],
+            config: {
+              systemInstruction,
+            }
+          });
+          
+          return response.text;
+        } catch (error) {
+          console.error("Error generating answer:", error);
+          return "Sorry, I encountered an error while processing your request. Please try again.";
+        }
+      };
+
+      const explainDerivation = async (topic) => {
+        try {
+          const model = 'gemini-2.5-pro';
+          const prompt = `Provide a step-by-step derivation or explanation for the following theorem or formula: "${topic}". Explain each step clearly. Use markdown for formatting, especially for mathematical formulas and equations.`;
+
+          const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+          });
+
+          return response.text;
+        } catch (error) {
+          console.error("Error explaining derivation:", error);
+          throw new Error("Failed to explain the derivation. Please check the topic and try again.");
+        }
+      };
+
+      const generateDiagram = async (prompt) => {
+        try {
+          const model = 'gemini-2.5-flash-image';
+          const fullPrompt = `Generate a clear, educational diagram, flowchart, or mindmap for the following topic: ${prompt}. The diagram should be visually appealing, simple, and easy to understand for a student. Use minimal text.`;
+          
+          const response = await ai.models.generateContent({
+              model,
+              contents: { parts: [{ text: fullPrompt }] },
+              config: {
+                  responseModalities: [Modality.IMAGE],
+              },
+          });
+
+          for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+              const base64ImageBytes = part.inlineData.data;
+              return `data:image/png;base64,${base64ImageBytes}`;
+            }
+          }
+          throw new Error("No image data found in the response.");
+
+        } catch (error) {
+          console.error("Error generating diagram:", error);
+          throw new Error("Failed to generate diagram. Please check the prompt and try again.");
+        }
+      };
+
+      const generateFormulas = async (topic) => {
+          try {
+              const model = 'gemini-2.5-flash';
+              const prompt = `Provide key formulas related to the topic: "${topic}". For each formula, give its name, the formula itself (in a readable string format), and a brief explanation of what it represents and its variables.`;
+
+              const response = await ai.models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                          type: Type.OBJECT,
+                          properties: {
+                              formulas: {
+                                  type: Type.ARRAY,
+                                  items: {
+                                      type: Type.OBJECT,
+                                      properties: {
+                                          name: { type: Type.STRING },
+                                          formula: { type: Type.STRING },
+                                          explanation: { type: Type.STRING }
+                                      },
+                                      required: ["name", "formula", "explanation"]
+                                  }
+                              }
+                          },
+                          required: ["formulas"]
+                      }
+                  }
+              });
+
+              const jsonText = response.text.trim();
+              const parsed = JSON.parse(jsonText);
+              return parsed.formulas;
+
+          } catch (error) {
+              console.error("Error generating formulas:", error);
+              throw new Error("Failed to generate formulas. The topic might be too complex or invalid.");
+          }
+      };
+
+      const solveQuestionFromImage = async (prompt, imageBase64, mimeType) => {
+        try {
+          const model = 'gemini-2.5-flash';
+          const imagePart = {
+            inlineData: {
+              mimeType,
+              data: imageBase64,
+            },
+          };
+          const textPart = {
+            text: prompt,
+          };
+          
+          const response = await ai.models.generateContent({
+            model,
+            contents: { parts: [imagePart, textPart] },
+          });
+          
+          return response.text;
+        } catch (error) {
+          console.error("Error solving question from image:", error);
+          return "Sorry, I couldn't analyze the image. Please try uploading a clearer image.";
+        }
+      };
+
+      const generatePracticeQuestions = async (topic) => {
+          try {
+              const model = 'gemini-2.5-flash';
+              const prompt = `Generate 5 practice questions for the topic: "${topic}". The questions should cover different aspects of the topic. For each question, provide a concise answer.`;
+
+              const response = await ai.models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                          type: Type.OBJECT,
+                          properties: {
+                              questions: {
+                                  type: Type.ARRAY,
+                                  items: {
+                                      type: Type.OBJECT,
+                                      properties: {
+                                          question: { type: Type.STRING },
+                                          answer: { type: Type.STRING }
+                                      },
+                                      required: ["question", "answer"]
+                                  }
+                              }
+                          },
+                          required: ["questions"]
+                      }
+                  }
+              });
+
+              const jsonText = response.text.trim();
+              const parsed = JSON.parse(jsonText);
+              return parsed.questions;
+
+          } catch (error) {
+              console.error("Error generating practice questions:", error);
+              throw new Error("Failed to generate questions. Please try a different topic.");
+          }
+      };
+
+      const generateQuiz = async (topic, numQuestions) => {
+          try {
+              const model = 'gemini-2.5-flash';
+              const prompt = `Create a multiple-choice quiz about "${topic}". Generate ${numQuestions} questions. For each question, provide 4 options, identify the index of the correct answer (0-3), and give a brief explanation for the correct answer.`;
+
+              const response = await ai.models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                          type: Type.OBJECT,
+                          properties: {
+                              quiz: {
+                                  type: Type.ARRAY,
+                                  items: {
+                                      type: Type.OBJECT,
+                                      properties: {
+                                          question: { type: Type.STRING },
+                                          options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                          correctAnswerIndex: { type: Type.INTEGER },
+                                          explanation: { type: Type.STRING }
+                                      },
+                                      required: ["question", "options", "correctAnswerIndex", "explanation"]
+                                  }
+                              }
+                          },
+                          required: ["quiz"]
+                      },
+                  },
+              });
+
+              const jsonText = response.text.trim();
+              const parsed = JSON.parse(jsonText);
+              return parsed.quiz;
+
+          } catch (error) {
+              console.error("Error generating quiz:", error);
+              throw new Error("Failed to generate the quiz. The topic might be too broad or invalid.");
+          }
+      };
+
+      const generateStructuredNotes = async (topic) => {
+          try {
+              const model = 'gemini-2.5-flash';
+              const prompt = `Generate structured study notes for the topic: "${topic}". Provide a summary, key characters or concepts, important terms with their meanings, and potential previous year questions (PYQs).`;
+
+              const response = await ai.models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                          type: Type.OBJECT,
+                          properties: {
+                              summary: { type: Type.STRING, description: "A concise summary of the topic." },
+                              characters: { 
+                                  type: Type.ARRAY, 
+                                  items: { type: Type.STRING },
+                                  description: "A list of key characters, figures, or main concepts."
+                              },
+                              meanings: {
+                                  type: Type.ARRAY,
+                                  items: {
+                                      type: Type.OBJECT,
+                                      properties: {
+                                          term: { type: Type.STRING },
+                                          definition: { type: Type.STRING }
+                                      },
+                                      required: ["term", "definition"]
+                                  },
+                                  description: "An array of important terms and their definitions."
+                              },
+                              pyqs: {
+                                  type: Type.ARRAY,
+                                  items: { type: Type.STRING },
+                                  description: "A list of 3-5 potential questions from previous exams related to this topic."
+                              }
+                          },
+                          required: ["summary", "characters", "meanings", "pyqs"]
+                      },
+                  },
+              });
+              
+              const jsonText = response.text.trim();
+              return JSON.parse(jsonText);
+
+          } catch (error) {
+              console.error("Error generating structured notes:", error);
+              throw new Error("Failed to generate notes. The topic might be too broad or invalid.");
+          }
+      };
+      
+      const generateSearchResults = async (query) => {
+          try {
+              const model = 'gemini-2.5-flash';
+              const prompt = `Generate a list of 5-7 mock search results within a study application for the query: "${query}". The results should include a mix of Notes, PYQs (Previous Year Questions), and Diagrams.`;
+
+              const response = await ai.models.generateContent({
+                  model,
+                  contents: prompt,
+                  config: {
+                      responseMimeType: "application/json",
+                      responseSchema: {
+                          type: Type.OBJECT,
+                          properties: {
+                            results: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        title: { type: Type.STRING },
+                                        type: { type: Type.STRING, enum: ["Note", "PYQ", "Diagram"] },
+                                        snippet: { type: Type.STRING, description: "A short, relevant summary or description of the search result." }
+                                    },
+                                    required: ["title", "type", "snippet"]
+                                }
+                            }
+                          },
+                          required: ["results"]
+                      }
+                  }
+              });
+
+              const jsonText = response.text.trim();
+              const parsed = JSON.parse(jsonText);
+              return parsed.results;
+
+          } catch (error) {
+              console.error("Error generating search results:", error);
+              throw new Error("Failed to generate search results. Please try a different query.");
+          }
+      };
+
+      // --- VIEW COMPONENTS ---
+      const ConceptChat = () => {
+        const [messages, setMessages] = useState(() => {
+          try {
+            const storedMessages = localStorage.getItem('conceptChatHistory');
+            if (storedMessages) {
+              return JSON.parse(storedMessages);
+            }
+          } catch (error) {
+            console.error("Failed to parse chat history from localStorage", error);
+          }
+          return [{ sender: Sender.AI, text: 'Hello! Ask me any concept, and I will help you understand it.' }];
+        });
+
+        const [input, setInput] = useState('');
+        const [isLoading, setIsLoading] = useState(false);
+        const [isExplainLikeFive, setIsExplainLikeFive] = useState(false);
+        const messagesEndRef = useRef(null);
+
+        const scrollToBottom = () => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        useEffect(scrollToBottom, [messages]);
+        
+        useEffect(() => {
+          try {
+            localStorage.setItem('conceptChatHistory', JSON.stringify(messages));
+          } catch (error) {
+            console.error("Failed to save chat history to localStorage", error);
+          }
+        }, [messages]);
+
+        const handleSend = useCallback(async () => {
+          if (input.trim() === '' || isLoading) return;
+
+          const userMessage = { sender: Sender.User, text: input };
+          setMessages(prev => [...prev, userMessage]);
+          setInput('');
+          setIsLoading(true);
+
+          try {
+            const history = messages.map(msg => ({
+              role: msg.sender === Sender.User ? 'user' : 'model',
+              parts: [{ text: msg.text }]
+            }));
+            const aiResponse = await generateConceptAnswer(history, input, isExplainLikeFive);
+            const aiMessage = { sender: Sender.AI, text: aiResponse };
+            setMessages(prev => [...prev, aiMessage]);
+          } catch (error) {
+            const errorMessage = { sender: Sender.System, text: 'An error occurred. Please try again.' };
+            setMessages(prev => [...prev, errorMessage]);
+          } finally {
+            setIsLoading(false);
+          }
+        }, [input, isLoading, messages, isExplainLikeFive]);
+
+        return (
+          <div className="flex flex-col h-full bg-white dark:bg-slate-800 rounded-xl shadow-lg">
+            <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-text-primary dark:text-white">AI Concept Chat</h2>
+              <div className="flex items-center">
+                  <label htmlFor="eli5-toggle-concept" className="flex items-center cursor-pointer">
+                      <span className="mr-3 text-sm font-medium text-text-primary dark:text-slate-300">Explain Simply</span>
+                      <div className="relative">
+                          <input type="checkbox" id="eli5-toggle-concept" className="sr-only" checked={isExplainLikeFive} onChange={() => setIsExplainLikeFive(!isExplainLikeFive)} />
+                          <div className="block bg-gray-300 dark:bg-gray-600 w-14 h-8 rounded-full"></div>
+                          <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform duration-300 ease-in-out ${isExplainLikeFive ? 'translate-x-6 bg-secondary' : 'bg-gray-500'}`}></div>
+                      </div>
+                  </label>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {messages.map((msg, index) => (
+                <div key={index} className={`flex items-start gap-4 ${msg.sender === Sender.User ? 'justify-end' : ''}`}>
+                  {msg.sender === Sender.AI && <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold flex-shrink-0">AI</div>}
+                  <div className={`max-w-xl p-4 rounded-xl shadow-sm ${
+                      msg.sender === Sender.User ? 'bg-primary text-white' : 
+                      msg.sender === Sender.AI ? 'bg-slate-100 dark:bg-slate-700 text-text-primary dark:text-slate-200' : 
+                      'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                  }`}>
+                    <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{__html: msg.text.replace(/```(\w+)?\s*([\s\S]*?)```/g, '<pre class="bg-gray-800 text-white p-3 rounded-md my-2 overflow-x-auto"><code>$2</code></pre>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}}></div>
+                  </div>
+                  {msg.sender === Sender.User && <div className="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold flex-shrink-0">U</div>}
+                </div>
+              ))}
+              {isLoading && (
+                  <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold flex-shrink-0">AI</div>
+                      <div className="max-w-lg p-4 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center">
+                          <LoadingSpinner size="5" />
+                      </div>
+                  </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+            <div className="p-4 border-t dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-xl">
+              <div className="relative">
+                <textarea
+                  className="w-full p-3 pr-12 border rounded-lg focus:ring-primary focus:border-primary resize-none transition-shadow bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
+                  rows={1}
+                  placeholder="Ask anything about a concept..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={isLoading || input.trim() === ''}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full text-white bg-primary hover:bg-primary/90 disabled:bg-gray-300 transition-all"
+                  aria-label="Send message"
+                >
+                  <SendIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+      
+      const DoubtSolver = () => {
+        const [messages, setMessages] = useState(() => {
+          try {
+            const storedMessages = localStorage.getItem('doubtSolverHistory');
+            if (storedMessages) {
+              return JSON.parse(storedMessages);
+            }
+          } catch (error) {
+            console.error("Failed to parse chat history from localStorage", error);
+          }
+          return [{ sender: Sender.AI, text: 'Hello! How can I help you with your studies today?' }];
+        });
+        
+        const [input, setInput] = useState('');
+        const [isLoading, setIsLoading] = useState(false);
+        const [isExplainLikeFive, setIsExplainLikeFive] = useState(false);
+        const messagesEndRef = useRef(null);
+
+        const scrollToBottom = () => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        };
+
+        useEffect(scrollToBottom, [messages]);
+        
+        useEffect(() => {
+          try {
+            localStorage.setItem('doubtSolverHistory', JSON.stringify(messages));
+          } catch (error) {
+            console.error("Failed to save chat history to localStorage", error);
+          }
+        }, [messages]);
+
+        const handleSend = useCallback(async () => {
+          if (input.trim() === '' || isLoading) return;
+
+          const userMessage = { sender: Sender.User, text: input };
+          setMessages(prev => [...prev, userMessage]);
+          setInput('');
+          setIsLoading(true);
+
+          try {
+            const history = messages.map(msg => ({
+              role: msg.sender === Sender.User ? 'user' : 'model',
+              parts: [{ text: msg.text }]
+            }));
+            const aiResponse = await generateDoubtAnswer(history, input, isExplainLikeFive);
+            const aiMessage = { sender: Sender.AI, text: aiResponse };
+            setMessages(prev => [...prev, aiMessage]);
+          } catch (error) {
+            const errorMessage = { sender: Sender.System, text: 'An error occurred. Please try again.' };
+            setMessages(prev => [...prev, errorMessage]);
+          } finally {
+            setIsLoading(false);
+          }
+        }, [input, isLoading, messages, isExplainLikeFive]);
+
+        return (
+          <div className="flex flex-col h-full bg-white dark:bg-slate-800 rounded-xl shadow-lg">
+            <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center">
+              <h2 className="text-lg font-semibold text-text-primary dark:text-white">AI Doubt Solver</h2>
+              <div className="flex items-center">
+                  <label htmlFor="eli5-toggle-doubt" className="flex items-center cursor-pointer">
+                      <span className="mr-3 text-sm font-medium text-text-primary dark:text-slate-300">Explain Like I'm 5</span>
+                      <div className="relative">
+                          <input type="checkbox" id="eli5-toggle-doubt" className="sr-only" checked={isExplainLikeFive} onChange={() => setIsExplainLikeFive(!isExplainLikeFive)} />
+                          <div className="block bg-gray-600 w-14 h-8 rounded-full"></div>
+                          <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition ${isExplainLikeFive ? 'translate-x-6 bg-secondary' : ''}`}></div>
+                      </div>
+                  </label>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {messages.map((msg, index) => (
+                <div key={index} className={`flex items-start gap-4 ${msg.sender === Sender.User ? 'justify-end' : ''}`}>
+                  {msg.sender === Sender.AI && <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold flex-shrink-0">AI</div>}
+                  <div className={`max-w-lg p-4 rounded-xl ${
+                      msg.sender === Sender.User ? 'bg-primary text-white' : 
+                      msg.sender === Sender.AI ? 'bg-gray-100 dark:bg-slate-700 text-text-primary dark:text-slate-200' : 
+                      'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                  }`}>
+                    <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{__html: msg.text.replace(/```(\w+)?\s*([\s\S]*?)```/g, '<pre class="bg-gray-800 text-white p-3 rounded-md my-2 overflow-x-auto"><code>$2</code></pre>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}}></div>
+                  </div>
+                  {msg.sender === Sender.User && <div className="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold flex-shrink-0">U</div>}
+                </div>
+              ))}
+              {isLoading && (
+                  <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold flex-shrink-0">AI</div>
+                      <div className="max-w-lg p-4 rounded-xl bg-gray-100 dark:bg-slate-700 flex items-center">
+                          <LoadingSpinner size="5" />
+                      </div>
+                  </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+            <div className="p-4 border-t dark:border-slate-700">
+              <div className="relative">
+                <textarea
+                  className="w-full p-3 pr-12 border rounded-lg focus:ring-primary focus:border-primary resize-none bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
+                  rows={1}
+                  placeholder="Ask anything..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  disabled={isLoading}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={isLoading || input.trim() === ''}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full text-white bg-primary hover:bg-primary/90 disabled:bg-gray-300 transition-colors"
+                >
+                  <SendIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const DiagramGenerator = () => {
+        const [prompt, setPrompt] = useState('');
+        const [imageUrl, setImageUrl] = useState(null);
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const handleGenerate = useCallback(async () => {
+          if (prompt.trim() === '' || isLoading) return;
+
+          setIsLoading(true);
+          setError(null);
+          setImageUrl(null);
+
+          try {
+            const url = await generateDiagram(prompt);
+            setImageUrl(url);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+          } finally {
+            setIsLoading(false);
+          }
+        }, [prompt, isLoading]);
+
+        return (
+          <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+            <h2 className="text-xl font-semibold text-text-primary dark:text-white mb-4">AI Diagram & Mindmap Generator</h2>
+            <div className="flex items-center gap-4 mb-6">
+              <input
+                type="text"
+                className="flex-grow p-3 border rounded-lg focus:ring-primary focus:border-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                placeholder="Enter a topic, e.g., 'The Water Cycle' or 'Photosynthesis'"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                disabled={isLoading}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || prompt.trim() === ''}
+                className="flex items-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 transition-colors"
+              >
+                {isLoading ? <LoadingSpinner size="5" color="white" /> : <SparklesIcon className="w-5 h-5" />}
+                <span>Generate</span>
+              </button>
+            </div>
+
+            <div className="flex-grow flex items-center justify-center bg-gray-50 dark:bg-slate-900/50 border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl p-4">
+              {isLoading && (
+                <div className="text-center">
+                  <LoadingSpinner size="12" />
+                  <p className="mt-4 text-text-secondary dark:text-slate-400">Generating your diagram... this may take a moment.</p>
+                </div>
+              )}
+              {error && <p className="text-red-500">{error}</p>}
+              {imageUrl && !isLoading && (
+                <div className="w-full h-full flex flex-col items-center">
+                  <img src={imageUrl} alt="Generated Diagram" className="max-w-full max-h-[80%] object-contain rounded-lg shadow-md" />
+                  <a href={imageUrl} download={`${prompt.replace(/\s+/g, '_')}_diagram.png`} className="mt-4 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors">
+                    Download Diagram
+                  </a>
+                </div>
+              )}
+              {!isLoading && !imageUrl && !error && (
+                <div className="text-center text-text-secondary dark:text-slate-400">
+                  <DiagramIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <p>Your generated diagram will appear here.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+      
+      const NotesGenerator = () => {
+        const [topic, setTopic] = useState('');
+        const [notes, setNotes] = useState(null);
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const handleGenerate = useCallback(async () => {
+          if (topic.trim() === '' || isLoading) return;
+
+          setIsLoading(true);
+          setError(null);
+          setNotes(null);
+
+          try {
+            const generatedNotes = await generateStructuredNotes(topic);
+            setNotes(generatedNotes);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+          } finally {
+            setIsLoading(false);
+          }
+        }, [topic, isLoading]);
+
+        const NoteSection = ({ title, children }) => (
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+            <h3 className="text-lg font-bold text-primary dark:text-indigo-400 border-b-2 border-primary/20 pb-2 mb-4">{title}</h3>
+            {children}
+          </div>
+        );
+
+        return (
+          <div className="p-6 bg-gray-50 dark:bg-slate-900 rounded-xl shadow-lg h-full flex flex-col">
+            <h2 className="text-xl font-semibold text-text-primary dark:text-white mb-4">AI Structured Notes Generator</h2>
+            <div className="flex items-center gap-4 mb-6">
+              <input
+                type="text"
+                className="flex-grow p-3 border rounded-lg focus:ring-primary focus:border-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                placeholder="Enter a chapter or topic, e.g., 'The French Revolution'"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                disabled={isLoading}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || topic.trim() === ''}
+                className="flex items-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 transition-colors"
+              >
+                {isLoading ? <LoadingSpinner size="5" color="white" /> : <SparklesIcon className="w-5 h-5" />}
+                <span>Generate Notes</span>
+              </button>
+            </div>
+
+            <div className="flex-grow overflow-y-auto pr-2">
+              {isLoading && (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <LoadingSpinner size="12" />
+                  <p className="mt-4 text-text-secondary dark:text-slate-400">Generating structured notes for you...</p>
+                </div>
+              )}
+              {error && <div className="flex items-center justify-center h-full text-red-500 bg-red-50 p-4 rounded-lg">{error}</div>}
+              {notes && !isLoading && (
+                <div className="space-y-6">
+                  <NoteSection title="Summary">
+                    <p className="text-text-secondary dark:text-slate-300 leading-relaxed">{notes.summary}</p>
+                  </NoteSection>
+                  
+                  <NoteSection title="Key Characters / Concepts">
+                    <ul className="list-disc list-inside space-y-2 text-text-secondary dark:text-slate-300">
+                      {notes.characters.map((char, i) => <li key={i}>{char}</li>)}
+                    </ul>
+                  </NoteSection>
+
+                  <NoteSection title="Important Meanings">
+                    <div className="space-y-4">
+                      {notes.meanings.map((meaning, i) => (
+                        <div key={i} className="border-l-4 border-secondary pl-4">
+                          <p className="font-semibold text-text-primary dark:text-white">{meaning.term}</p>
+                          <p className="text-text-secondary dark:text-slate-300">{meaning.definition}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </NoteSection>
+
+                  <NoteSection title="Previous Year Questions (PYQs)">
+                    <ul className="list-decimal list-inside space-y-2 text-text-secondary dark:text-slate-300">
+                      {notes.pyqs.map((pyq, i) => <li key={i}>{pyq}</li>)}
+                    </ul>
+                  </NoteSection>
+                </div>
+              )}
+              {!isLoading && !notes && !error && (
+                <div className="flex flex-col items-center justify-center h-full text-center text-text-secondary dark:text-slate-400 bg-white dark:bg-slate-800 rounded-lg">
+                  <NotesIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <p>Your generated notes will appear here in a structured format.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+      
+      const PricingPage = () => {
+          const [billingCycle, setBillingCycle] = useState('monthly');
+
+          const PricingCard = ({ title, price, features, popular = false, buttonText = "Choose Plan" }) => (
+              <div className={`relative border rounded-xl p-8 flex flex-col bg-white dark:bg-slate-800 ${popular ? 'border-primary border-2' : 'border-gray-200 dark:border-slate-700'}`}>
+                  {popular && <div className="absolute top-0 -translate-y-1/2 bg-primary text-white px-3 py-1 text-sm font-semibold rounded-full">MOST POPULAR</div>}
+                  <h3 className="text-lg font-semibold text-text-primary dark:text-white">{title}</h3>
+                  <p className="mt-4 text-4xl font-bold tracking-tight text-text-primary dark:text-white">{price}</p>
+                  <p className="mt-1 text-sm text-text-secondary dark:text-slate-400">{title.toLowerCase().includes('pack') ? 'one-time purchase' : 'per month/year'}</p>
+                  <ul role="list" className="mt-8 space-y-3 text-sm text-text-secondary dark:text-slate-400 flex-grow">
+                      {features.map((feature, index) => (
+                          <li key={index} className="flex items-center gap-3">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-secondary" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                              <span>{feature}</span>
+                          </li>
+                      ))}
+                  </ul>
+                  <button className={`mt-8 block w-full py-3 px-6 rounded-md text-center font-medium ${popular ? 'bg-primary text-white hover:bg-primary/90' : 'bg-gray-100 dark:bg-slate-700 text-primary dark:text-indigo-400 hover:bg-gray-200 dark:hover:bg-slate-600'}`}>
+                      {buttonText}
+                  </button>
+              </div>
+          );
+
+          const oneTimePurchases = [
+              { title: "Single Note", price: "₹49", features: ["Access to one note", "Downloadable PDF", "AI summary included"] },
+              { title: "Subject Pack", price: "₹299", features: ["All notes for one subject", "Downloadable PDFs", "All diagrams included", "PYQ analysis"] },
+              { title: "Full Class Pack", price: "₹999", features: ["All notes for your class", "Full subject access", "Priority support", "Test series included"], popular: true },
+          ];
+
+          const subscriptions = {
+              monthly: [
+                  { title: "Monthly Subscription", price: "₹149", features: ["Unlimited notes access", "AI Doubt Solver", "Diagram Generator", "Cancel anytime"] },
+              ],
+              yearly: [
+                  { title: "Yearly Subscription", price: "₹999", features: ["Everything in Monthly", "Save 30% with yearly plan", "Early access to new features", "Priority AI support"], popular: true },
+              ],
+          };
+
+          return (
+              <div className="p-6 h-full overflow-y-auto">
+                  <div className="max-w-4xl mx-auto">
+                      <div className="text-center">
+                          <h1 className="text-4xl font-bold tracking-tight text-text-primary dark:text-white sm:text-5xl">Find the perfect plan for your studies</h1>
+                          <p className="mt-4 text-lg text-text-secondary dark:text-slate-400">Unlock your full potential with our AI-powered tools and comprehensive notes.</p>
+                      </div>
+
+                      <section className="mt-12">
+                          <h2 className="text-2xl font-bold text-center text-text-primary dark:text-white mb-8">One-Time Purchases</h2>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                              {oneTimePurchases.map(plan => <PricingCard key={plan.title} title={plan.title} price={plan.price} features={plan.features} popular={plan.popular} />)}
+                          </div>
+                      </section>
+                      
+                      <section className="mt-16">
+                          <h2 className="text-2xl font-bold text-center text-text-primary dark:text-white mb-8">Subscriptions (All Access)</h2>
+                          <div className="flex justify-center mb-8">
+                              <div className="relative flex p-1 bg-gray-200 dark:bg-slate-700 rounded-full">
+                                  <button onClick={() => setBillingCycle('monthly')} className={`w-32 py-2 text-sm font-medium rounded-full transition-colors ${billingCycle === 'monthly' ? 'bg-white dark:bg-slate-900 text-primary dark:text-indigo-400 shadow-sm' : 'text-gray-600 dark:text-slate-300'}`}>Monthly</button>
+                                  <button onClick={() => setBillingCycle('yearly')} className={`w-32 py-2 text-sm font-medium rounded-full transition-colors ${billingCycle === 'yearly' ? 'bg-white dark:bg-slate-900 text-primary dark:text-indigo-400 shadow-sm' : 'text-gray-600 dark:text-slate-300'}`}>Yearly</button>
+                              </div>
+                          </div>
+                          <div className={`grid grid-cols-1 ${billingCycle === 'yearly' ? 'md:grid-cols-1 justify-center' : 'md:grid-cols-1'} max-w-md mx-auto gap-8`}>
+                              {subscriptions[billingCycle].map(plan => <PricingCard key={plan.title} title={plan.title} price={plan.price} features={plan.features} popular={plan.popular} />)}
+                          </div>
+                      </section>
+                  </div>
+              </div>
+          );
+      };
+
+      const ProfilePage = () => {
+        const purchaseHistory = [
+            { orderId: '#1023', date: '2023-10-25', item: 'Full Class Pack', amount: '₹999.00' },
+            { orderId: '#987', date: '2023-09-12', item: 'Single Note: Photosynthesis', amount: '₹49.00' },
+        ];
+
+        const savedItems = [
+            { type: 'Note', title: 'The Mughal Empire' },
+            { type: 'Question', title: 'Why is the sky blue?' },
+            { type: 'Diagram', title: 'Carbon Cycle' },
+        ];
+
+        return (
+          <div className="h-full overflow-y-auto p-2">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg mb-6">
+              <div className="flex items-center gap-6">
+                <img className="w-24 h-24 rounded-full" src="https://picsum.photos/200" alt="user photo" />
+                <div>
+                  <h1 className="text-2xl font-bold text-text-primary dark:text-white">Alex Doe</h1>
+                  <p className="text-text-secondary dark:text-slate-400">alex.doe@example.com</p>
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                      Yearly Subscriber
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg">
+                  <h2 className="text-xl font-bold text-text-primary dark:text-white mb-4">Purchase History</h2>
+                  <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                            <thead className="bg-gray-50 dark:bg-slate-700">
+                              <tr>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Order ID</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Date</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Item</th>
+                                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                              {purchaseHistory.map(item => (
+                                  <tr key={item.orderId}>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{item.orderId}</td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">{item.date}</td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">{item.item}</td>
+                                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400 text-right">{item.amount}</td>
+                                  </tr>
+                              ))}
+                            </tbody>
+                      </table>
+                  </div>
+                </div>
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-lg">
+                  <h2 className="text-xl font-bold text-text-primary dark:text-white mb-4">Saved Items</h2>
+                  <ul className="space-y-3">
+                      {savedItems.map(item => (
+                          <li key={item.title} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700/50 rounded-md">
+                              <div>
+                                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${item.type === 'Note' ? 'bg-blue-100 text-blue-600' : item.type === 'Question' ? 'bg-yellow-100 text-yellow-600' : 'bg-purple-100 text-purple-600'}`}>{item.type}</span>
+                                  <p className="font-medium text-text-primary dark:text-white mt-1">{item.title}</p>
+                              </div>
+                              <a href="#" className="text-primary dark:text-indigo-400 text-sm font-semibold">View</a>
+                          </li>
+                      ))}
+                  </ul>
+                  </div>
+            </div>
+          </div>
+        );
+      };
+
+      const ContentLibraryPage = ({ type }) => {
+        const title = type === 'Note' ? 'Notes Library' : 'PYQ Section';
+        const description = type === 'Note' ? 'Browse through all the available notes.' : 'Practice with questions from previous years.';
+        const mockData = Array.from({ length: 12 }, (_, i) => ({
+            title: type === 'Note' ? `Chapter ${i + 1}: Important Concepts` : `Exam Paper ${2022 - i}`,
+            subject: ['Physics', 'Chemistry', 'Biology', 'History'][i % 4]
+        }));
+
+        const ContentCard = ({ title, subject }) => (
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm hover:shadow-lg border border-gray-200 dark:border-slate-700 transition-all duration-300">
+                <div className="p-3 bg-primary/10 rounded-lg w-max mb-3">
+                    <NotesIcon className="w-6 h-6 text-primary"/>
+                </div>
+                <p className="text-xs font-semibold text-primary dark:text-indigo-400 uppercase">{subject}</p>
+                <h3 className="font-bold text-text-primary dark:text-white mt-1">{title}</h3>
+                <button className="mt-4 text-sm font-semibold text-secondary hover:text-secondary/80">View Details &rarr;</button>
+            </div>
+        );
+
+        return (
+          <div className="h-full flex flex-col">
+              <div className="mb-6">
+                  <h1 className="text-3xl font-bold text-text-primary dark:text-white">{title}</h1>
+                  <p className="text-text-secondary dark:text-slate-400 mt-1">{description}</p>
+              </div>
+
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-md mb-6 flex flex-wrap items-center gap-4">
+                  <p className="text-sm font-semibold dark:text-white">Filter by:</p>
+                  <select className="bg-gray-100 dark:bg-slate-700 border-transparent dark:text-white rounded-lg py-2 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-primary">
+                      <option>All Subjects</option>
+                      <option>Physics</option>
+                      <option>Chemistry</option>
+                      <option>Biology</option>
+                      <option>History</option>
+                  </select>
+                  <select className="bg-gray-100 dark:bg-slate-700 border-transparent dark:text-white rounded-lg py-2 pl-3 pr-8 focus:outline-none focus:ring-2 focus:ring-primary">
+                      <option>Sort by Latest</option>
+                      <option>Sort by Popularity</option>
+                  </select>
+              </div>
+
+              <div className="flex-grow overflow-y-auto pr-2 -mr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      {mockData.map(item => <ContentCard key={item.title} title={item.title} subject={item.subject}/>)}
+                  </div>
+              </div>
+          </div>
+        );
+      };
+      
+      const AdminPanel = ({ setActiveView }) => {
+        const AdminCard = ({ icon: Icon, title, description, actionText, onClick }) => (
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col">
+            <div className="flex items-center mb-4">
+              <div className="p-3 bg-primary/10 rounded-full mr-4">
+                <Icon className="w-6 h-6 text-primary" />
+              </div>
+              <h3 className="text-lg font-bold text-text-primary dark:text-white">{title}</h3>
+            </div>
+            <p className="text-text-secondary dark:text-slate-400 text-sm flex-grow">{description}</p>
+            <button onClick={onClick} className="mt-6 self-start text-sm font-semibold text-primary dark:text-indigo-400 hover:text-primary/80 transition-colors">
+              {actionText} &rarr;
+            </button>
+          </div>
+        );
+
+        const adminTasks = [
+          { icon: UploadIcon, title: "Upload Notes", description: "Add new study materials, edit existing notes, or remove outdated content from the library.", actionText: "Manage Notes", targetView: 'admin-notes' },
+          { icon: SalesIcon, title: "Check Total Sales", description: "View detailed sales reports, track revenue from subscriptions and individual purchases.", actionText: "View Reports", targetView: 'admin-sales' },
+          { icon: UsersIcon, title: "See Active Users", description: "Monitor user activity, see who is online, and manage user accounts and permissions.", actionText: "Manage Users", targetView: 'admin-users' },
+          { icon: UploadIcon, title: "Upload PYQs", description: "Manage the collection of Previous Year Questions to help students prepare for exams.", actionText: "Manage PYQs", targetView: 'admin-pyqs' },
+          { icon: DiagramIcon, title: "Control Diagrams", description: "Upload, review, and manage all the diagrams and mindmaps available to students.", actionText: "Manage Diagrams", targetView: 'admin-diagrams' },
+          { icon: NotificationIcon, title: "Send Notifications", description: "Push alerts to users about new content, special offers, or important exam dates.", actionText: "Send Alert", targetView: 'admin-notifications' },
+        ];
+
+        return (
+          <div className="p-6 bg-gray-50 dark:bg-slate-900 rounded-xl shadow-lg h-full overflow-y-auto">
+            <h1 className="text-3xl font-bold text-text-primary dark:text-white mb-2">Admin Dashboard</h1>
+            <p className="text-text-secondary dark:text-slate-400 mb-8">Welcome, Admin. Manage the IntelliStudy AI platform from here.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {adminTasks.map(task => (
+                <AdminCard 
+                  key={task.title} 
+                  icon={task.icon} 
+                  title={task.title} 
+                  description={task.description} 
+                  actionText={task.actionText}
+                  onClick={() => setActiveView(task.targetView)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      };
+      
+      const AdminFormModal = ({ isOpen, onClose, itemType }) => {
+        if (!isOpen) return null;
+
+        const handleSave = (e) => {
+          e.preventDefault();
+          alert(`Saving new ${itemType}... (mock)`);
+          onClose();
+        };
+
+        return (
+          <div 
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={onClose}
+          >
+            <div 
+              className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-fade-in-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-text-primary">Add New {itemType}</h2>
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <form onSubmit={handleSave}>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name / Title</label>
+                    <input type="text" id="name" className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm" placeholder={`Enter ${itemType} title...`}/>
+                  </div>
+                  <div>
+                    <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea id="description" rows={3} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm" placeholder="Add a short description..."></textarea>
+                  </div>
+                  {itemType === 'Note' && (
+                      <div>
+                        <label htmlFor="upload" className="block text-sm font-medium text-gray-700">Upload File</label>
+                        <input type="file" id="upload" className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"/>
+                      </div>
+                  )}
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">
+                    Cancel
+                  </button>
+                  <button type="submit" className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90">
+                    Save {itemType}
+                  </button>
+                </div>
+              </form>
+            </div>
+            <style>{`
+              @keyframes fade-in-up {
+                0% { opacity: 0; transform: translateY(20px); }
+                100% { opacity: 1; transform: translateY(0); }
+              }
+              .animate-fade-in-up {
+                animation: fade-in-up 0.3s ease-out forwards;
+              }
+            `}</style>
+          </div>
+        );
+      };
+      
+      const AdminDetailPage = ({ title, itemType, setActiveView }) => {
+          const [isModalOpen, setIsModalOpen] = useState(false);
+          
+          const generateMockData = (itemType, count) => {
+              return Array.from({ length: count }, (_, i) => {
+                  switch(itemType) {
+                      case 'Note': return { id: i + 1, name: `Chapter ${i + 1}: The Cell`, subject: 'Biology', created: '2023-10-27', status: 'Published' };
+                      case 'User': return { id: i + 1, name: `student${i+1}@school.com`, plan: 'Yearly', joined: '2023-09-15', status: 'Active' };
+                      case 'Sale': return { id: i + 1, name: `Order #${1023 + i}`, amount: '₹' + (Math.random() * 1000).toFixed(2), date: '2023-10-28', status: 'Completed' };
+                      case 'Notification': return { id: i + 1, name: `New Biology Notes Added`, amount: 'All Users', date: '2023-10-26', status: 'Sent' };
+                      default: return { id: i + 1, name: `${itemType} #${i+1}`, subject: 'General', created: '2023-10-01', status: 'Active' };
+                  }
+              });
+          };
+
+          const mockData = generateMockData(itemType, 8);
+          const headers = Object.keys(mockData[0] || {});
+
+        return (
+          <>
+              <AdminFormModal 
+                  isOpen={isModalOpen}
+                  onClose={() => setIsModalOpen(false)}
+                  itemType={itemType}
+              />
+              <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+                  <div>
+                      <button onClick={() => setActiveView('admin')} className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400 hover:text-primary mb-2">
+                          <ArrowLeftIcon className="w-4 h-4"/>
+                          Back to Dashboard
+                      </button>
+                      <h1 className="text-2xl font-bold text-text-primary dark:text-white">{title}</h1>
+                      <p className="text-text-secondary dark:text-slate-400 text-sm">A list of all {itemType.toLowerCase()}s in the system.</p>
+                  </div>
+                  <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors self-start sm:self-center">
+                      Add New {itemType}
+                  </button>
+                </div>
+
+                <div className="flex-grow overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                    <thead className="bg-gray-50 dark:bg-slate-700">
+                      <tr>
+                        {headers.map(header => (
+                          <th key={header} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+                              {header}
+                          </th>
+                        ))}
+                        <th scope="col" className="relative px-6 py-3">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                      {mockData.map((item) => (
+                        <tr key={item.id}>
+                          {headers.map(header => (
+                              <td key={header} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-300">
+                                {item[header]}
+                              </td>
+                          ))}
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <a href="#" className="text-primary hover:text-primary/80">Edit</a>
+                            <a href="#" className="ml-4 text-red-600 hover:text-red-800">Delete</a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                  <div className="mt-4 flex items-center justify-between">
+                      <p className="text-sm text-gray-500 dark:text-slate-400">Showing 1 to {mockData.length} of {mockData.length} results</p>
+                      <div className="flex gap-1">
+                          <button className="px-3 py-1 border dark:border-slate-600 rounded-md text-sm hover:bg-gray-100 dark:hover:bg-slate-700">Previous</button>
+                          <button className="px-3 py-1 border dark:border-slate-600 rounded-md text-sm hover:bg-gray-100 dark:hover:bg-slate-700">Next</button>
+                      </div>
+                </div>
+              </div>
+          </>
+        );
+      };
+
+      const Dashboard = ({ setActiveView }) => {
+        const FeatureCard = ({ icon: Icon, title, description, view, setActiveView }) => (
+          <div 
+            className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-md hover:shadow-lg hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col"
+            onClick={() => setActiveView(view)}
+          >
+            <div className="p-3 bg-primary/10 rounded-full w-max mb-4">
+              <Icon className="w-6 h-6 text-primary" />
+            </div>
+            <h3 className="text-lg font-bold text-text-primary dark:text-white">{title}</h3>
+            <p className="text-text-secondary dark:text-slate-400 text-sm mt-1 flex-grow">{description}</p>
+            <p className="text-sm font-semibold text-primary dark:text-indigo-400 mt-4">Launch Tool &rarr;</p>
+          </div>
+        );
+
+        const features = [
+          { icon: ChatIcon, title: 'AI Concept Chat', description: 'Get instant, clear explanations for any academic concept.', view: 'concept-chat' },
+          { icon: DiagramIcon, title: 'AI Diagram Generator', description: 'Visualize complex systems and ideas with AI-generated diagrams.', view: 'diagram-generator' },
+          { icon: CameraIcon, title: 'Scan Your Question', description: 'Upload or snap a picture of a question to get a detailed solution.', view: 'scan-question' },
+          { icon: QuestionIcon, title: 'AI Quiz Master', description: 'Test your knowledge with a personalized, AI-generated quiz.', view: 'quiz-master' },
+        ];
+        
+        return (
+          <div className="h-full overflow-y-auto">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold text-text-primary dark:text-white">Welcome to IntelliStudy AI</h1>
+              <p className="text-text-secondary dark:text-slate-400 mt-1">Your personal AI toolkit for mastering any subject. What will you learn today?</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {features.map(feature => <FeatureCard key={feature.view} {...feature} setActiveView={setActiveView} />)}
+            </div>
+            
+            <div>
+              <h2 className="text-xl font-bold text-text-primary dark:text-white mb-4">More AI Tools</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <FeatureCard 
+                      icon={FlaskIcon}
+                      title="AI Formula Solver"
+                      description="Find and understand the key formulas for any topic in seconds."
+                      view="formula-generator"
+                      setActiveView={setActiveView}
+                  />
+                  <FeatureCard 
+                      icon={QuestionIcon}
+                      title="AI Question Practice"
+                      description="Generate practice questions to solidify your understanding of a topic."
+                      view="question-practice"
+                      setActiveView={setActiveView}
+                  />
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const FormulaGenerator = () => {
+        const [topic, setTopic] = useState('');
+        const [formulas, setFormulas] = useState(null);
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const handleGenerate = useCallback(async () => {
+          if (topic.trim() === '' || isLoading) return;
+
+          setIsLoading(true);
+          setError(null);
+          setFormulas(null);
+
+          try {
+            const generatedFormulas = await generateFormulas(topic);
+            setFormulas(generatedFormulas);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+          } finally {
+            setIsLoading(false);
+          }
+        }, [topic, isLoading]);
+
+        return (
+          <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+            <h2 className="text-xl font-semibold text-text-primary dark:text-white mb-4">AI Formula Solver</h2>
+            <div className="flex items-center gap-4 mb-6">
+              <input
+                type="text"
+                className="flex-grow p-3 border rounded-lg focus:ring-primary focus:border-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                placeholder="Enter a topic, e.g., 'Linear Motion' or 'Ideal Gas Law'"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                disabled={isLoading}
+                onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || topic.trim() === ''}
+                className="flex items-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 transition-colors"
+              >
+                {isLoading ? <LoadingSpinner size="5" color="white" /> : <SparklesIcon className="w-5 h-5" />}
+                <span>Generate</span>
+              </button>
+            </div>
+
+            <div className="flex-grow overflow-y-auto pr-2 -mr-2">
+              {isLoading && (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <LoadingSpinner size="12" />
+                  <p className="mt-4 text-text-secondary dark:text-slate-400">Searching for formulas...</p>
+                </div>
+              )}
+              {error && <div className="flex items-center justify-center h-full text-red-500 bg-red-50 p-4 rounded-lg dark:bg-red-900/50 dark:text-red-300">{error}</div>}
+              {formulas && !isLoading && (
+                <div className="space-y-4">
+                  {formulas.map((item, index) => (
+                      <div key={index} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <p className="font-bold text-md text-primary dark:text-indigo-400">{item.name}</p>
+                          <div className="my-2 p-3 bg-slate-800 text-white rounded-md font-mono text-center text-lg">
+                              {item.formula}
+                          </div>
+                          <p className="text-sm text-text-secondary dark:text-slate-400 leading-relaxed">{item.explanation}</p>
+                      </div>
+                  ))}
+                </div>
+              )}
+              {!isLoading && !formulas && !error && (
+                <div className="flex flex-col items-center justify-center h-full text-center text-text-secondary dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                  <FlaskIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <p>Key formulas for your topic will appear here.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const QuestionPractice = () => {
+        const [topic, setTopic] = useState('');
+        const [questions, setQuestions] = useState(null);
+        const [revealedAnswers, setRevealedAnswers] = useState([]);
+        const [isLoading, setIsLoading] = useState(false);
+        const [error, setError] = useState(null);
+
+        const handleGenerate = useCallback(async () => {
+          if (topic.trim() === '' || isLoading) return;
+
+          setIsLoading(true);
+          setError(null);
+          setQuestions(null);
+          setRevealedAnswers([]);
+
+          try {
+            const generatedQuestions = await generatePracticeQuestions(topic);
+            setQuestions(generatedQuestions);
+            setRevealedAnswers(new Array(generatedQuestions.length).fill(false));
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+          } finally {
+            setIsLoading(false);
+          }
+        }, [topic, isLoading]);
+
+        const toggleAnswer = (index) => {
+          setRevealedAnswers(prev => {
+              const newRevealed = [...prev];
+              newRevealed[index] = !newRevealed[index];
+              return newRevealed;
+          });
+        };
+
+        return (
+          <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+            <h2 className="text-xl font-semibold text-text-primary dark:text-white mb-4">AI Question Practice</h2>
+            <div className="flex items-center gap-4 mb-6">
+              <input
+                type="text"
+                className="flex-grow p-3 border rounded-lg focus:ring-primary focus:border-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                placeholder="Enter a topic to practice, e.g., 'Cell Biology'"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                disabled={isLoading}
+                onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isLoading || topic.trim() === ''}
+                className="flex items-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 transition-colors"
+              >
+                {isLoading ? <LoadingSpinner size="5" color="white" /> : <SparklesIcon className="w-5 h-5" />}
+                <span>Get Questions</span>
+              </button>
+            </div>
+
+            <div className="flex-grow overflow-y-auto pr-2 -mr-2">
+              {isLoading && (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <LoadingSpinner size="12" />
+                  <p className="mt-4 text-text-secondary dark:text-slate-400">Generating practice questions...</p>
+                </div>
+              )}
+              {error && <div className="flex items-center justify-center h-full text-red-500 bg-red-50 dark:bg-red-900/50 dark:text-red-300 p-4 rounded-lg">{error}</div>}
+              {questions && !isLoading && (
+                <div className="space-y-4">
+                  {questions.map((qa, index) => (
+                      <div key={index} className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                          <p className="font-semibold text-text-primary dark:text-slate-200 mb-3">Q{index+1}: {qa.question}</p>
+                          <button onClick={() => toggleAnswer(index)} className="text-sm font-semibold text-primary dark:text-indigo-400 hover:underline">
+                              {revealedAnswers[index] ? 'Hide' : 'Show'} Answer
+                          </button>
+                          {revealedAnswers[index] && (
+                              <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/50 border-l-4 border-green-500 text-green-800 dark:text-green-300 text-sm">
+                                  {qa.answer}
+                              </div>
+                          )}
+                      </div>
+                  ))}
+                </div>
+              )}
+              {!isLoading && !questions && !error && (
+                <div className="flex flex-col items-center justify-center h-full text-center text-text-secondary dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
+                  <QuestionIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                  <p>Practice questions for your topic will appear here.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      const QuizMaster = () => {
+        const [topic, setTopic] = useState('');
+        const [numQuestions, setNumQuestions] = useState(5);
+        const [quiz, setQuiz] = useState([]);
+        const [userAnswers, setUserAnswers] = useState([]);
+        const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+        const [quizState, setQuizState] = useState('config');
+        const [error, setError] = useState(null);
+
+        const startQuiz = useCallback(async () => {
+          if (topic.trim() === '') return;
+          setQuizState('loading');
+          setError(null);
+          try {
+            const questions = await generateQuiz(topic, numQuestions);
+            setQuiz(questions);
+            setUserAnswers(new Array(questions.length).fill(-1));
+            setCurrentQuestionIndex(0);
+            setQuizState('active');
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setQuizState('config');
+          }
+        }, [topic, numQuestions]);
+
+        const handleAnswerSelect = (optionIndex) => {
+          setUserAnswers(prev => {
+              const newAnswers = [...prev];
+              newAnswers[currentQuestionIndex] = optionIndex;
+              return newAnswers;
+          });
+        };
+
+        const nextQuestion = () => {
+          if (currentQuestionIndex < quiz.length - 1) {
+            setCurrentQuestionIndex(prev => prev + 1);
+          } else {
+            setQuizState('results');
+          }
+        };
+        
+        const resetQuiz = () => {
+            setTopic('');
+            setQuiz([]);
+            setUserAnswers([]);
+            setCurrentQuestionIndex(0);
+            setQuizState('config');
+            setError(null);
+        }
+
+        const calculateScore = () => {
+            return userAnswers.reduce((score, answer, index) => {
+                return score + (answer === quiz[index].correctAnswerIndex ? 1 : 0);
+            }, 0);
+        }
+
+        if (quizState === 'loading') {
+          return (
+              <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col items-center justify-center">
+                  <LoadingSpinner size="12" />
+                  <p className="mt-4 text-text-secondary dark:text-slate-300">Generating your quiz on "{topic}"...</p>
+              </div>
+          );
+        }
+        
+        if (quizState === 'results') {
+            const score = calculateScore();
+            const scorePercentage = Math.round((score / quiz.length) * 100);
+            return (
+              <div className="p-4 sm:p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+                  <h2 className="text-2xl font-bold text-center text-text-primary dark:text-white mb-2">Quiz Results</h2>
+                  <div className="text-center mb-6">
+                      <p className="text-lg text-text-secondary dark:text-slate-300">Your Score</p>
+                      <p className="text-5xl font-bold text-primary dark:text-indigo-400 my-1">{score} / {quiz.length}</p>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 my-2 max-w-sm mx-auto">
+                          <div className="bg-primary h-2.5 rounded-full" style={{ width: `${scorePercentage}%` }}></div>
+                      </div>
+                  </div>
+
+                  <h3 className="text-xl font-semibold text-text-primary dark:text-white mb-4">Detailed Solutions</h3>
+                  <div className="flex-grow overflow-y-auto pr-2 -mr-2 space-y-4">
+                      {quiz.map((q, index) => {
+                          const userAnswer = userAnswers[index];
+                          const isCorrect = userAnswer === q.correctAnswerIndex;
+                          return (
+                              <div key={index} className={`p-4 rounded-lg border-l-4 ${isCorrect ? 'bg-green-50 dark:bg-green-900/50 border-green-500' : 'bg-red-50 dark:bg-red-900/50 border-red-500'}`}>
+                                  <p className="font-semibold text-text-primary dark:text-slate-200 mb-2">Q: {q.question}</p>
+                                  <div className="space-y-2 text-sm">
+                                      {q.options.map((option, optionIndex) => {
+                                          const isUserAnswer = optionIndex === userAnswer;
+                                          const isCorrectAnswer = optionIndex === q.correctAnswerIndex;
+                                          return (
+                                              <div key={optionIndex} className={`flex items-center gap-2 p-2 rounded ${
+                                                  isCorrectAnswer ? 'bg-green-100 dark:bg-green-800/60' : 
+                                                  isUserAnswer ? 'bg-red-100 dark:bg-red-800/60' : 
+                                                  'bg-gray-100 dark:bg-slate-700'
+                                              }`}>
+                                                  {isCorrectAnswer ? <CheckIcon className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" /> : 
+                                                  isUserAnswer ? <XIcon className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" /> : 
+                                                  <div className="w-4 h-4 flex-shrink-0"></div>}
+                                                  <span className={`flex-grow ${isCorrectAnswer ? 'font-semibold text-green-800 dark:text-green-300' : isUserAnswer ? 'text-red-800 dark:text-red-300 line-through' : 'text-text-secondary dark:text-slate-400'}`}>
+                                                      {option}
+                                                  </span>
+                                              </div>
+                                          );
+                                      })}
+                                  </div>
+                                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                                      <p className="font-semibold text-xs text-text-primary dark:text-slate-300">Explanation:</p>
+                                      <p className="text-sm text-text-secondary dark:text-slate-400 mt-1">{q.explanation}</p>
+                                  </div>
+                              </div>
+                          );
+                      })}
+                  </div>
+                  <button onClick={resetQuiz} className="mt-6 w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors">
+                      Take Another Quiz
+                  </button>
+              </div>
+            );
+        }
+
+        if (quizState === 'active') {
+          const currentQuestion = quiz[currentQuestionIndex];
+          return (
+              <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+                  <div className="mb-4">
+                      <p className="text-sm text-text-secondary dark:text-slate-400">Question {currentQuestionIndex + 1} of {quiz.length}</p>
+                      <h2 className="text-lg font-semibold text-text-primary dark:text-white mt-1">{currentQuestion.question}</h2>
+                  </div>
+                  <div className="space-y-3 flex-grow">
+                      {currentQuestion.options.map((option, index) => (
+                          <button key={index} onClick={() => handleAnswerSelect(index)} className={`w-full text-left p-3 border rounded-lg transition-colors dark:border-slate-600 dark:text-slate-200 ${userAnswers[currentQuestionIndex] === index ? 'bg-primary text-white border-primary' : 'hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                              {option}
+                          </button>
+                      ))}
+                  </div>
+                  <button onClick={nextQuestion} disabled={userAnswers[currentQuestionIndex] === -1} className="mt-6 w-full py-3 bg-secondary text-white font-semibold rounded-lg hover:bg-secondary/90 disabled:bg-gray-300 dark:disabled:bg-gray-600">
+                      {currentQuestionIndex < quiz.length - 1 ? 'Next Question' : 'Finish Quiz'}
+                  </button>
+              </div>
+          )
+        }
+
+        return (
+          <div className="p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col items-center justify-center text-center">
+              <QuestionIcon className="w-16 h-16 text-gray-400 mb-4" />
+              <h2 className="text-2xl font-bold text-text-primary dark:text-white">AI Quiz Master</h2>
+              <p className="text-text-secondary dark:text-slate-400 mt-2 max-w-sm">Test your knowledge with a custom quiz generated by AI on any topic you want.</p>
+              <div className="mt-8 w-full max-w-sm space-y-4">
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:ring-primary focus:border-primary dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    placeholder="Enter a topic..."
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                  />
+                  <div>
+                      <label className="text-sm text-text-secondary dark:text-slate-400 mb-2 block">Number of Questions: {numQuestions}</label>
+                      <input
+                          type="range"
+                          min="3"
+                          max="10"
+                          value={numQuestions}
+                          onChange={(e) => setNumQuestions(Number(e.target.value))}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary dark:bg-gray-700"
+                      />
+                  </div>
+                  {error && <p className="text-sm text-red-500">{error}</p>}
+                  <button
+                    onClick={startQuiz}
+                    disabled={topic.trim() === ''}
+                    className="flex w-full items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 transition-colors"
+                  >
+                    <SparklesIcon className="w-5 h-5" />
+                    <span>Start Quiz</span>
+                  </button>
+              </div>
+          </div>
+        );
+      };
+
+      const ScanQuestion = () => {
+          const [imageFile, setImageFile] = useState(null);
+          const [imageBase64, setImageBase64] = useState(null);
+          const [prompt, setPrompt] = useState("Solve the problem in this image step-by-step.");
+          const [isLoading, setIsLoading] = useState(false);
+          const [result, setResult] = useState(null);
+          const [error, setError] = useState(null);
+          const fileInputRef = useRef(null);
+
+          const handleFileChange = (event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                  setImageFile(file);
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                      const base64String = (reader.result).split(',')[1];
+                      setImageBase64(base64String);
+                  };
+                  reader.readAsDataURL(file);
+                  setResult(null);
+                  setError(null);
+              }
+          };
+
+          const handleGenerate = useCallback(async () => {
+              if (!imageBase64 || !imageFile || isLoading) return;
+
+              setIsLoading(true);
+              setError(null);
+              setResult(null);
+
+              try {
+                  const solution = await solveQuestionFromImage(prompt, imageBase64, imageFile.type);
+                  setResult(solution);
+              } catch (err) {
+                  setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+              } finally {
+                  setIsLoading(false);
+              }
+          }, [imageBase64, imageFile, prompt, isLoading]);
+
+          const triggerFileSelect = () => fileInputRef.current?.click();
+
+          return (
+              <div className="p-4 sm:p-6 bg-white dark:bg-slate-800 rounded-xl shadow-lg h-full flex flex-col">
+                  <h2 className="text-xl font-semibold text-text-primary dark:text-white mb-4">AI Question Scanner</h2>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow min-h-0">
+                      <div className="flex flex-col gap-4">
+                          <div 
+                              className="flex-grow border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center p-4 relative cursor-pointer hover:border-primary dark:hover:border-indigo-400 transition-colors"
+                              onClick={triggerFileSelect}
+                          >
+                              <input
+                                  ref={fileInputRef}
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  onChange={handleFileChange}
+                                  className="hidden"
+                                  aria-label="Upload question image"
+                              />
+                              {imageBase64 ? (
+                                  <img src={`data:${imageFile?.type};base64,${imageBase64}`} alt="Question Preview" className="max-w-full max-h-full object-contain rounded-lg"/>
+                              ) : (
+                                  <div className="text-center text-text-secondary dark:text-slate-400">
+                                      <UploadIcon className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                                      <p className="font-semibold">Tap to upload or scan</p>
+                                      <p className="text-sm">Take a picture of your question.</p>
+                                  </div>
+                              )}
+                          </div>
+                          <textarea 
+                              className="w-full p-3 border rounded-lg focus:ring-primary focus:border-primary bg-transparent dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200"
+                              rows={2}
+                              placeholder="Add instructions (optional)..."
+                              value={prompt}
+                              onChange={(e) => setPrompt(e.target.value)}
+                              disabled={isLoading}
+                          />
+                          <button
+                              onClick={handleGenerate}
+                              disabled={isLoading || !imageBase64}
+                              className="w-full flex items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-lg hover:bg-primary/90 disabled:bg-gray-400 dark:disabled:bg-gray-600 transition-colors"
+                          >
+                              {isLoading ? <LoadingSpinner size="5" color="white" /> : <SparklesIcon className="w-5 h-5" />}
+                              <span>Get Solution</span>
+                          </button>
+                      </div>
+                      <div className="bg-slate-50 dark:bg-slate-900/50 border dark:border-slate-700 rounded-xl p-4 flex-grow overflow-y-auto">
+                          {isLoading && (
+                              <div className="flex flex-col items-center justify-center h-full text-center">
+                                  <LoadingSpinner size="12" />
+                                  <p className="mt-4 text-text-secondary dark:text-slate-400">Analyzing your question...</p>
+                              </div>
+                          )}
+                          {error && <div className="flex items-center justify-center h-full text-red-500 bg-red-50 dark:bg-red-900/50 dark:text-red-300 p-4 rounded-lg">{error}</div>}
+                          {result && !isLoading && (
+                              <div 
+                                  className="prose prose-sm max-w-none dark:prose-invert"
+                                  dangerouslySetInnerHTML={{__html: result.replace(/```(\w+)?\s*([\s\S]*?)```/g, '<pre class="bg-gray-800 text-white p-3 rounded-md my-2 overflow-x-auto"><code>$2</code></pre>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}}
+                              />
+                          )}
+                          {!isLoading && !result && !error && (
+                              <div className="flex flex-col items-center justify-center h-full text-center text-text-secondary dark:text-slate-400">
+                                  <CameraIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                                  <p>The solution will appear here.</p>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              </div>
+          )
+      }
+
+
+      // --- LAYOUT COMPONENTS ---
+      const Sidebar = ({ activeView, setActiveView, isSidebarOpen }) => {
+        const userNavItems = [
+          { id: 'dashboard', icon: HomeIcon, label: 'Dashboard' },
+          { id: 'doubt-solver', icon: ChatIcon, label: 'AI Doubt Solver' },
+          { id: 'concept-chat', icon: ChatIcon, label: 'AI Concept Chat' },
+          { id: 'notes-generator', icon: SparklesIcon, label: 'AI Notes Gen' },
+          { id: 'diagram-generator', icon: DiagramIcon, label: 'AI Diagrams' },
+          { id: 'formula-generator', icon: FlaskIcon, label: 'AI Formula Solver' },
+          { id: 'scan-question', icon: CameraIcon, label: 'Scan Question' },
+          { id: 'question-practice', icon: QuestionIcon, label: 'AI Practice' },
+          { id: 'quiz-master', icon: QuestionIcon, label: 'AI Quiz Master' },
+          { id: 'notes-library', icon: NotesIcon, label: 'Notes Library' },
+          { id: 'pyq', icon: NotesIcon, label: 'PYQ Section' },
+          { id: 'pricing', icon: PricingIcon, label: 'Pricing' },
+          { id: 'profile', icon: ProfileIcon, label: 'Profile' },
+        ];
+
+        const adminNavItems = [
+          { id: 'admin', icon: AdminIcon, label: 'Admin Panel' }
+        ];
+
+        const NavLink = ({ id, icon: Icon, label }) => (
+          <li>
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveView(id);
+              }}
+              className={`flex items-center p-3 rounded-lg text-gray-300 hover:bg-sidebar-accent transition-colors duration-200 ${
+                activeView === id ? 'bg-primary text-white' : ''
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="ml-4 text-sm font-medium">{label}</span>
+            </a>
+          </li>
+        );
+
+        return (
+          <aside className={`fixed top-0 left-0 z-40 w-64 h-screen bg-sidebar transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+              <div className="h-full px-3 py-4 overflow-y-auto flex flex-col">
+                  <div className="flex items-center pl-2.5 mb-8">
+                      <SparklesIcon className="w-8 h-8 text-primary" />
+                      <span className="self-center text-xl font-semibold whitespace-nowrap text-white ml-2">IntelliStudy AI</span>
+                  </div>
+                  <ul className="space-y-2 flex-grow">
+                      {userNavItems.map(item => (
+                          <NavLink key={item.id} id={item.id} icon={item.icon} label={item.label} />
+                      ))}
+                  </ul>
+                  <div>
+                      <hr className="my-4 border-t border-gray-600" />
+                      <ul className="space-y-2">
+                          {adminNavItems.map(item => (
+                              <NavLink key={item.id} id={item.id} icon={item.icon} label={item.label} />
+                          ))}
+                      </ul>
+                  </div>
+              </div>
+          </aside>
+        );
+      };
+
+      const Header = ({ title, toggleSidebar, theme, toggleTheme }) => {
+        return (
+          <header className="bg-white dark:bg-slate-800 shadow-sm dark:border-b dark:border-slate-700 p-4 flex items-center justify-between gap-4 sticky top-0 z-20 flex-shrink-0">
+            <div className="flex items-center">
+              <button onClick={toggleSidebar} className="text-gray-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary md:hidden mr-4" aria-label="Open sidebar">
+                <svg className="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <h1 className="text-xl md:text-2xl font-bold text-text-primary dark:text-white whitespace-nowrap">{title}</h1>
+            </div>
+            <button onClick={toggleTheme} className="p-2 rounded-full text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:ring-offset-slate-800 focus:ring-primary" aria-label="Toggle dark mode">
+              {theme === 'light' ? <MoonIcon className="w-6 h-6" /> : <SunIcon className="w-6 h-6" />}
+            </button>
+          </header>
+        );
+      };
+
+      const BottomNav = ({ activeView, setActiveView }) => {
+        const NavItem = ({ id, icon: Icon, label, isActive, onClick }) => (
+            <button onClick={onClick} className={`flex flex-col items-center justify-center w-full pt-2 pb-1 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-gray-500 dark:text-slate-400 hover:text-primary dark:hover:text-indigo-400'}`}>
+                <Icon className="w-6 h-6 mb-1" />
+                <span className="text-xs font-medium">{label}</span>
+            </button>
+        );
+          
+          const navItems = [
+              { id: 'dashboard', icon: HomeIcon, label: 'Home' },
+              { id: 'doubt-solver', icon: ChatIcon, label: 'Doubt' },
+              { id: 'scan-question', icon: CameraIcon, label: 'Scan' },
+              { id: 'quiz-master', icon: QuestionIcon, label: 'Quiz' },
+              { id: 'profile', icon: ProfileIcon, label: 'Profile' },
+          ];
+
+          return (
+              <div className="fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-slate-800 border-t border-gray-200 dark:border-slate-700 shadow-t-lg z-30 md:hidden">
+                  <div className="flex justify-around items-center h-full">
+                      {navItems.map(item => (
+                          <NavItem 
+                              key={item.id}
+                              id={item.id}
+                              icon={item.icon}
+                              label={item.label}
+                              isActive={activeView === item.id}
+                              onClick={() => setActiveView(item.id)}
+                          />
+                      ))}
+                  </div>
+              </div>
+          );
+      };
+
+
+      // --- MAIN APP COMPONENT ---
+      const App = () => {
+        const [activeView, setActiveView] = useState('dashboard');
+        const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+        const [theme, setTheme] = useState(() => {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            const storedTheme = window.localStorage.getItem('theme');
+            if (storedTheme) return storedTheme;
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+              return 'dark';
+            }
+          }
+          return 'light';
+        });
+
+        useEffect(() => {
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          localStorage.setItem('theme', theme);
+        }, [theme]);
+        
+        const toggleTheme = () => {
+          setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+        };
+
+        const handleSetActiveView = (view) => {
+          setActiveView(view);
+          if (isSidebarOpen) {
+              setIsSidebarOpen(false);
+          }
+        };
+
+        const viewTitles = {
+          'dashboard': 'Dashboard',
+          'concept-chat': 'AI Concept Chat',
+          'diagram-generator': 'AI Diagram Generator',
+          'formula-generator': 'AI Formula Solver',
+          'scan-question': 'Scan a Question',
+          'question-practice': 'AI Question Practice',
+          'quiz-master': 'AI Quiz Master',
+          'doubt-solver': 'AI Doubt Solver',
+          'notes-generator': 'AI Notes Generator',
+          'notes-library': 'Notes Library',
+          'pyq': 'PYQ Section',
+          'pricing': 'Pricing Plans',
+          'profile': 'My Profile',
+          'admin': 'Admin Panel',
+          'admin-notes': 'Manage Notes',
+          'admin-sales': 'Sales Reports',
+          'admin-users': 'Manage Users',
+          'admin-pyqs': 'Manage PYQs',
+          'admin-diagrams': 'Manage Diagrams',
+          'admin-notifications': 'Send Notifications',
+        };
+
+        const renderContent = () => {
+          switch (activeView) {
+            case 'dashboard': return <Dashboard setActiveView={handleSetActiveView} />;
+            case 'concept-chat': return <ConceptChat />;
+            case 'diagram-generator': return <DiagramGenerator />;
+            case 'formula-generator': return <FormulaGenerator />;
+            case 'scan-question': return <ScanQuestion />;
+            case 'question-practice': return <QuestionPractice />;
+            case 'quiz-master': return <QuizMaster />;
+            case 'doubt-solver': return <DoubtSolver />;
+            case 'notes-generator': return <NotesGenerator />;
+            case 'notes-library': return <ContentLibraryPage type="Note" />;
+            case 'pyq': return <ContentLibraryPage type="PYQ" />;
+            case 'pricing': return <PricingPage />;
+            case 'profile': return <ProfilePage />;
+            case 'admin': return <AdminPanel setActiveView={handleSetActiveView} />;
+            case 'admin-notes': return <AdminDetailPage title="Manage Notes" itemType="Note" setActiveView={handleSetActiveView} />;
+            case 'admin-sales': return <AdminDetailPage title="Sales Reports" itemType="Sale" setActiveView={handleSetActiveView} />;
+            case 'admin-users': return <AdminDetailPage title="Manage Users" itemType="User" setActiveView={handleSetActiveView} />;
+            case 'admin-pyqs': return <AdminDetailPage title="Manage PYQs" itemType="PYQ" setActiveView={handleSetActiveView} />;
+            case 'admin-diagrams': return <AdminDetailPage title="Manage Diagrams" itemType="Diagram" setActiveView={handleSetActiveView} />;
+            case 'admin-notifications': return <AdminDetailPage title="Send Notifications" itemType="Notification" setActiveView={handleSetActiveView} />;
+            default: return <Dashboard setActiveView={handleSetActiveView} />;
+          }
+        };
+        
+        const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+        
+        const getTitle = () => viewTitles[activeView] || 'IntelliStudy AI';
+
+        return (
+          <div className="min-h-screen bg-background dark:bg-slate-900 flex">
+            <Sidebar activeView={activeView} setActiveView={handleSetActiveView} isSidebarOpen={isSidebarOpen}/>
+            {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={toggleSidebar}></div>}
+
+            <div className="flex-1 md:ml-64 flex flex-col h-screen">
+              <Header title={getTitle()} toggleSidebar={toggleSidebar} theme={theme} toggleTheme={toggleTheme} />
+              <main className="flex-grow p-4 md:p-6 overflow-hidden pb-20 md:pb-6">
+                {renderContent()}
+              </main>
+            </div>
+            <BottomNav activeView={activeView} setActiveView={handleSetActiveView} />
+          </div>
+        );
+      };
+
+      // --- RENDER ---
+      const rootElement = document.getElementById('root');
+      if (!rootElement) {
+        throw new Error("Could not find root element to mount to");
+      }
+
+      const root = ReactDOM.createRoot(rootElement);
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+    </script>
+  </body>
+</html>
